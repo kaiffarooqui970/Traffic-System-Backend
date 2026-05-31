@@ -1,0 +1,3 @@
+/Users/kaif/Traffic-management-system/crow-backend/CMakeFiles/server.dir
+/Users/kaif/Traffic-management-system/crow-backend/CMakeFiles/edit_cache.dir
+/Users/kaif/Traffic-management-system/crow-backend/CMakeFiles/rebuild_cache.dir
