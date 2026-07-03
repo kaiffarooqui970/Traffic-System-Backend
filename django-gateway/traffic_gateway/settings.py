@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,12 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-mq*%qp$t9+6q-z@p-2q!)ue036(ap*p^#!t3&(oxf^bwbx4r4g'
+# Falls back to an obviously-fake dev key so `manage.py runserver` still works
+# out of the box; set DJANGO_SECRET_KEY in the environment for anything real.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-insecure-key-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -71,7 +74,13 @@ WSGI_APPLICATION = 'traffic_gateway.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
+#
+# NOTE: This project's real data (vehicles, junctions, violations, etc.)
+# lives in PostgreSQL and is only ever read/written by the C++ Crow backend
+# via libpqxx - Django never touches it. This SQLite database exists solely
+# because django.contrib.admin/auth/sessions (unused by our API but part of
+# INSTALLED_APPS by default) require *some* DATABASES entry to run
+# migrations against. It is not part of the traffic system's data model.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

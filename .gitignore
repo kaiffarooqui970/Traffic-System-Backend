@@ -1,0 +1,22 @@
+# C++ / CMake build artifacts
+crow-backend/CMakeFiles/
+crow-backend/CMakeCache.txt
+crow-backend/cmake_install.cmake
+crow-backend/Makefile
+crow-backend/server
+crow-backend/main
+crow-backend/build/
+crow-backend/.cache/
+crow-backend/notifications.log
+
+# Python / Django
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+django-gateway/*.log
+
+# Editor / machine-specific
+.vscode/
+.cache/
+.DS_Store

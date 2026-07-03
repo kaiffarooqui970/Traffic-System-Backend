@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: traffic_system_db
+      POSTGRES_USER: traffic_user
+      POSTGRES_PASSWORD: traffic_pass
+    ports:
+      - "5433:5432"  # host 5433 avoids clashing with a locally-installed postgres on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database-scripts/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traffic_user -d traffic_system_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  crow-backend:
+    build: ./crow-backend
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: traffic_system_db
+      PGUSER: traffic_user
+      PGPASSWORD: traffic_pass
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  django-gateway:
+    build: ./django-gateway
+    environment:
+      CROW_BACKEND_URL: http://crow-backend:8080
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - crow-backend
+
+volumes:
+  pgdata:
