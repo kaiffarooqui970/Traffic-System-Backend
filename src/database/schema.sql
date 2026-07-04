@@ -54,3 +54,14 @@ CREATE TABLE IF NOT EXISTS traffic_counts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_traffic_counts_junction_time ON traffic_counts(junction_id, timestamp);
+
+-- Seed data: baseline junctions so log_plate/report_violation/log_traffic_count/
+-- congestion_report/emergency_alert have something to reference out of the box,
+-- on any machine (Docker's fresh volume or a native `psql -f schema.sql` run).
+-- ON CONFLICT makes this safe to re-run. First insert gets id 1 ("Market
+-- Square"), matching the ids used in README examples and the UAT docs.
+INSERT INTO junctions (name, location) VALUES
+    ('Market Square', 'Downtown'),
+    ('Uptown Bridge', 'North District'),
+    ('Airport Road', 'East District')
+ON CONFLICT (name) DO NOTHING;

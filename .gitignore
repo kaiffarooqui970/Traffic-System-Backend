@@ -1,20 +1,23 @@
 # C++ / CMake build artifacts
-crow-backend/CMakeFiles/
-crow-backend/CMakeCache.txt
-crow-backend/cmake_install.cmake
-crow-backend/Makefile
-crow-backend/server
-crow-backend/main
-crow-backend/build/
-crow-backend/.cache/
-crow-backend/notifications.log
+src/crow-backend/CMakeFiles/
+src/crow-backend/CMakeCache.txt
+src/crow-backend/cmake_install.cmake
+src/crow-backend/Makefile
+src/crow-backend/server
+src/crow-backend/main
+src/crow-backend/build/
+src/crow-backend/.cache/
+src/crow-backend/notifications.log
 
 # Python / Django
 __pycache__/
 *.pyc
 *.pyo
 db.sqlite3
-django-gateway/*.log
+src/django-gateway/*.log
+
+# Test artifacts
+.pytest_cache/
 
 # Editor / machine-specific
 .vscode/

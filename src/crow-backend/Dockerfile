@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY . .
 
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target server --parallel
 
 FROM debian:bookworm-slim
 

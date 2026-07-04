@@ -10,16 +10,19 @@ vehicle prioritisation. Built for LZPMPC005L Programming Clinic (weeks 12-15).
 Client → Django Gateway (pass-through only) → C++ Crow Backend (all business logic + DB access) → PostgreSQL
 ```
 
-- **Django Gateway** (`django-gateway/`, port 8000): pure HTTP pass-through.
-  Each route forwards the client's JSON to the matching Crow endpoint and
-  relays the response/status code back unchanged. No validation or business
-  logic lives here.
-- **C++ Crow Backend** (`crow-backend/`, port 8080): all validation, business
-  logic, and database access (via `libpqxx`).
+- **Django Gateway** (`src/django-gateway/`, port 8000): pure HTTP
+  pass-through. Each route forwards the client's JSON to the matching Crow
+  endpoint and relays the response/status code back unchanged. No validation
+  or business logic lives here.
+- **C++ Crow Backend** (`src/crow-backend/`, port 8080): all validation,
+  business logic, and database access (via `libpqxx`).
 - **PostgreSQL**: persists vehicles, junctions, plate logs, violations, and
-  traffic counts. Schema in `database-scripts/schema.sql`.
+  traffic counts. Schema in `src/database/schema.sql`.
 
-See `docs/` for UML diagrams (use case, sequence, class).
+See `docs/` for UML diagrams (use case, sequence, class) and
+[`docs/ISSUES.md`](docs/ISSUES.md) for the bug/issue tracking log.
+See [`tests/README.md`](tests/README.md) for the full testing and validation
+strategy (unit, integration, UAT).
 
 ## What's implemented
 
@@ -55,22 +58,31 @@ See `docs/` for UML diagrams (use case, sequence, class).
 
 ```
 .
-├── crow-backend/              # C++ Crow API - all business logic + DB access
-│   ├── main.cpp                # every /api/* endpoint
-│   ├── crow_all.h               # vendored single-header Crow framework
-│   ├── CMakeLists.txt
-│   └── Dockerfile
-├── django-gateway/            # Django API Gateway - pure HTTP pass-through
-│   ├── api/
-│   │   ├── views.py             # one forwarding view per Crow endpoint
-│   │   ├── urls.py
-│   │   └── tests.py             # gateway pass-through tests
-│   ├── traffic_gateway/settings.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── database-scripts/
-│   └── schema.sql              # full Postgres schema (5 tables)
-├── docs/                      # Mermaid UML diagrams (use case, sequence, class)
+├── src/                        # all implemented feature code
+│   ├── crow-backend/              # C++ Crow API - all business logic + DB access
+│   │   ├── main.cpp                  # every /api/* endpoint
+│   │   ├── traffic_logic.h           # pure validation/fine/congestion logic (unit-tested)
+│   │   ├── crow_all.h                # vendored single-header Crow framework
+│   │   ├── CMakeLists.txt
+│   │   └── Dockerfile
+│   ├── django-gateway/             # Django API Gateway - pure HTTP pass-through
+│   │   ├── api/
+│   │   │   ├── views.py               # one forwarding view per Crow endpoint
+│   │   │   ├── urls.py
+│   │   │   └── tests.py               # gateway unit tests (mocked HTTP to Crow)
+│   │   ├── traffic_gateway/settings.py
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   └── database/
+│       └── schema.sql              # full Postgres schema (5 tables)
+├── tests/                      # unit / integration / UAT - see tests/README.md
+│   ├── unit/
+│   │   ├── cpp/                    # doctest unit tests for traffic_logic.h
+│   │   └── django/                 # pointer to src/django-gateway/api/tests.py
+│   ├── integration/                # pytest end-to-end tests against the live stack
+│   └── uat/                        # Given/When/Then manual sign-off sheets
+├── docs/                       # Mermaid UML diagrams (use case, sequence, class)
+│   └── ISSUES.md                  # bug/issue tracking log
 ├── docker-compose.yml
 └── README.md
 ```
@@ -159,16 +171,16 @@ pg_isready                          # should print "accepting connections"
 **3. Create the database and load the schema:**
 ```bash
 createdb traffic_system_db
-psql -d traffic_system_db -f database-scripts/schema.sql
+psql -d traffic_system_db -f src/database/schema.sql
 ```
 Re-running this is safe - every `CREATE TABLE`/`CREATE INDEX` uses
 `IF NOT EXISTS`.
 
 **4. Build and run the Crow backend:**
 ```bash
-cd crow-backend
+cd src/crow-backend
 cmake -B build
-cmake --build build
+cmake --build build --target server
 ./build/server
 ```
 You should see:
@@ -177,6 +189,12 @@ Starting C++ Crow Server on port 8080...
 Crow/master server is running at http://0.0.0.0:8080 using 10 threads
 ```
 Leave this running; it listens on `http://localhost:8080`.
+
+The same `cmake -B build` also configures a `traffic_logic_tests` target
+(unit tests for the pure validation/fine/congestion logic) - see
+"Running tests" below. `cmake --build build` with no `--target` builds
+both `server` and `traffic_logic_tests`; use `--target server` if you only
+want the server binary.
 
 Connection details are read from environment variables - `PGHOST`,
 `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` - each falling back to a
@@ -187,7 +205,7 @@ to run on a different one, e.g. `PORT=8090 ./build/server`.
 
 **5. In a new terminal, install and run the Django gateway:**
 ```bash
-cd django-gateway
+cd src/django-gateway
 python3 -m venv venv && source venv/bin/activate   # optional but recommended
 pip install -r requirements.txt
 python manage.py runserver
@@ -214,8 +232,8 @@ curl -X POST http://localhost:8000/gateway/register_vehicle \
   step 3.
 - *`ld: library 'pqxx' not found` at build time* - `libpqxx`/`libpq` aren't
   installed, or CMake's cache is stale from a previous config. Re-run
-  `brew install libpq libpqxx` then delete `crow-backend/build/` and re-run
-  `cmake -B build && cmake --build build`.
+  `brew install libpq libpqxx` then delete `src/crow-backend/build/` and
+  re-run `cmake -B build && cmake --build build`.
 - *`asio.hpp file not found`* - `brew install asio` (Crow is header-only but
   depends on standalone ASIO for networking).
 
@@ -239,19 +257,32 @@ In `docker-compose.yml`, all of these are already wired up between services
 need this table for the native setup or if you're customizing the compose
 file.
 
-### Running tests
+## Testing and Validation
 
+Full details, exact commands, and current pass/fail status live in
+[`tests/README.md`](tests/README.md). Summary:
+
+| Layer | Location | Tooling | What it covers | Needs the stack running? |
+|---|---|---|---|---|
+| Unit (C++) | `tests/unit/cpp/` | doctest | Plate/email regex, violation type/severity validation, fine lookup, congestion threshold, emergency-flag logic (`src/crow-backend/traffic_logic.h`) | No |
+| Unit (Django) | `src/django-gateway/api/tests.py` | Django `TestCase` + mocked `requests` | Gateway forwards each route to the right Crow endpoint, relays status/body, handles `ConnectionError` | No |
+| Integration | `tests/integration/` | pytest + `requests` | Full round trip for all 6 endpoints against a real Django + Crow + Postgres stack, with automatic cleanup of test data | Yes |
+| UAT | `tests/uat/` | Markdown Given/When/Then checklists | One file per Week 12-15 feature, manual pass/fail sign-off | Yes (manual) |
+
+Quick commands:
 ```bash
-cd django-gateway
-python manage.py test api
-```
-This runs the gateway pass-through tests (mocked HTTP calls to Crow - no
-running Crow backend or database required). Expect `Ran 8 tests ... OK`.
+# C++ unit tests
+cd src/crow-backend && cmake -B build && cmake --build build --target traffic_logic_tests && ./build/traffic_logic_tests
 
-There is no separate C++ test suite; the Crow backend is verified by
-building it (`cmake --build build`) and exercising each endpoint with
-`curl` against a real Postgres instance, as shown in the smoke-test steps
-above.
+# Django unit tests
+cd src/django-gateway && python manage.py test api
+
+# Integration tests (stack must be running, e.g. docker compose up -d)
+pip install -r tests/integration/requirements.txt && pytest tests/integration -v
+```
+
+Bugs and known issues found while building and testing this project are
+tracked in [`docs/ISSUES.md`](docs/ISSUES.md).
 
 ## API Documentation
 

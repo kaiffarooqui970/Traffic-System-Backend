@@ -9,7 +9,7 @@ services:
       - "5433:5432"  # host 5433 avoids clashing with a locally-installed postgres on 5432
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database-scripts/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - ./src/database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U traffic_user -d traffic_system_db"]
       interval: 5s
@@ -17,7 +17,7 @@ services:
       retries: 10
 
   crow-backend:
-    build: ./crow-backend
+    build: ./src/crow-backend
     environment:
       PGHOST: db
       PGPORT: "5432"
@@ -32,7 +32,7 @@ services:
         condition: service_healthy
 
   django-gateway:
-    build: ./django-gateway
+    build: ./src/django-gateway
     environment:
       CROW_BACKEND_URL: http://crow-backend:8080
       DJANGO_DEBUG: "True"

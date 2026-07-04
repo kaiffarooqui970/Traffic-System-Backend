@@ -1,4 +1,5 @@
 #include "crow_all.h"
+#include "traffic_logic.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -7,23 +8,17 @@
 #include <cstdlib>
 #include <pqxx/pqxx>
 
-// ---------------------------------------------------------------------------
-// Configuration (would move to env vars / config file in a larger system)
-// ---------------------------------------------------------------------------
-static const int CONGESTION_WINDOW_MINUTES = 15;
-static const int CONGESTION_THRESHOLD = 20;      // vehicles within the window
-static const int EMERGENCY_LOOKBACK_MINUTES = 10; // "recently logged" drivers to notify
-
-// Fine amount lookup table: violation_type -> severity -> fine amount.
-// Configurable in one place instead of hardcoded per-endpoint-call.
-static const std::map<std::string, std::map<std::string, double>> FINE_TABLE = {
-    {"speeding",        {{"low", 50.0},  {"medium", 120.0}, {"high", 250.0}}},
-    {"illegal_parking", {{"low", 20.0},  {"medium", 50.0},  {"high", 100.0}}},
-    {"red_light",       {{"low", 80.0},  {"medium", 150.0}, {"high", 300.0}}}
-};
-
-static const std::regex PLATE_FORMAT("^[A-Z]{1,3}-[A-Z]{1,2}-[0-9]{1,4}$");
-static const std::regex EMAIL_FORMAT("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+using traffic_logic::CONGESTION_WINDOW_MINUTES;
+using traffic_logic::CONGESTION_THRESHOLD;
+using traffic_logic::EMERGENCY_LOOKBACK_MINUTES;
+using traffic_logic::is_valid_email;
+using traffic_logic::is_valid_plate;
+using traffic_logic::is_valid_violation_type;
+using traffic_logic::is_valid_severity;
+using traffic_logic::get_fine_amount;
+using traffic_logic::is_congested;
+using traffic_logic::is_predicted_congested;
+using traffic_logic::is_emergency_alert_allowed;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -80,28 +75,6 @@ void send_email_notification(const std::string& to, const std::string& subject, 
     //   SmtpClient client(smtp_host, env_or("SMTP_PORT", "587"));
     //   client.send(to, subject, body);
     std::cout << "[EMAIL:SMTP would send here] " << entry.str() << std::endl;
-}
-
-bool is_valid_email(const std::string& email) {
-    return std::regex_match(email, EMAIL_FORMAT);
-}
-
-bool is_valid_plate(const std::string& plate) {
-    return std::regex_match(plate, PLATE_FORMAT);
-}
-
-bool is_valid_violation_type(const std::string& type) {
-    return FINE_TABLE.find(type) != FINE_TABLE.end();
-}
-
-bool is_valid_severity(const std::string& type, const std::string& severity) {
-    auto it = FINE_TABLE.find(type);
-    if (it == FINE_TABLE.end()) return false;
-    return it->second.find(severity) != it->second.end();
-}
-
-double get_fine_amount(const std::string& type, const std::string& severity) {
-    return FINE_TABLE.at(type).at(severity);
 }
 
 // Returns true if a junction with this id exists.
@@ -453,21 +426,21 @@ int main() {
             for (auto row : recent) {
                 int jid = row["id"].as<int>();
                 long recent_count = row["recent_count"].as<long>();
-                bool is_congested = recent_count > CONGESTION_THRESHOLD;
+                bool congested = is_congested(recent_count);
                 double hist_avg = historical_avg.count(jid) ? historical_avg[jid] : 0.0;
-                bool predicted_congested = hist_avg > CONGESTION_THRESHOLD;
+                bool predicted_congested = is_predicted_congested(hist_avg);
 
                 crow::json::wvalue j;
                 j["junction_id"] = jid;
                 j["junction_name"] = row["name"].c_str();
                 j["recent_count"] = recent_count;
-                j["is_congested"] = is_congested;
+                j["is_congested"] = congested;
                 j["historical_avg_for_hour"] = hist_avg;
                 j["predicted_congested"] = predicted_congested;
                 junctions_json.push_back(std::move(j));
 
                 all_junction_counts.push_back({jid, recent_count});
-                if (is_congested) congested_junctions.push_back({jid, recent_count});
+                if (congested) congested_junctions.push_back({jid, recent_count});
             }
             res["junctions"] = std::move(junctions_json);
 
@@ -549,7 +522,7 @@ int main() {
                 return make_error(404, "No registered vehicle found for that plate_number.");
             }
             bool is_emergency = vehicle[0]["is_emergency"].as<bool>();
-            if (!is_emergency) {
+            if (!is_emergency_alert_allowed(is_emergency)) {
                 return make_error(403, "Vehicle is not a registered emergency vehicle; alert rejected.");
             }
 
